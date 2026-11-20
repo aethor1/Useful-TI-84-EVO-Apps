@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STOICH on TI-84 Evo</title>
+<link rel="stylesheet" href="evo.css">
+</head>
+<body>
+<main class="stage">
+  <div class="fit" id="fit">
+    <div class="calc" id="calc">
+      <div class="brand">TI-84 Evo</div>
+      <div class="bezel">
+        <canvas id="scr" width="960" height="720" aria-label="Calculator screen"></canvas>
+        <div class="loading" id="loading">Loading Python&hellip;</div>
+      </div>
+      <div class="status"><span id="ind2nd">2nd</span><span id="indAlpha">alpha</span><span id="indLock">A-lock</span></div>
+      <div class="keys" id="keys"></div>
+      <div class="ti">&#10022; Texas Instruments</div>
+    </div>
+  </div>
+
+  <aside class="side">
+    <h1>STOICH <small>web demo</small></h1>
+    <p>Same Python files as the calculator (<code>src/*.py</code>), running in the browser with Pyodide. <code>ti_draw</code> is redrawn on a canvas.</p>
+
+    <h2>Typing on your PC</h2>
+    <table class="kb">
+      <tr><td><kbd>N</kbd> <kbd>a</kbd></td><td>letters: type <code>NaCl</code> normally. A lowercase letter picks the 2-letter symbol from the list</td></tr>
+      <tr><td><kbd>0</kbd>–<kbd>9</kbd> <kbd>(</kbd> <kbd>)</kbd> <kbd>.</kbd></td><td>numbers. The page presses [x,t,&theta;,n] for you to switch ABC&rarr;123</td></tr>
+      <tr><td><kbd>*</kbd></td><td>[&times;]: hydrate dot / &times;10^</td></tr>
+      <tr><td><kbd>-</kbd></td><td>[&minus;] (negative exponent)</td></tr>
+      <tr><td><kbd>,</kbd> / <kbd>Space</kbd></td><td>lazy mode: next element</td></tr>
+      <tr><td><kbd>Tab</kbd></td><td>[x,t,&theta;,n]</td></tr>
+      <tr><td><kbd>Enter</kbd> <kbd>Bksp</kbd> <kbd>Esc</kbd></td><td>enter / del / clear</td></tr>
+      <tr><td>Arrows</td><td>arrow pad (pick list, scroll the work)</td></tr>
+      <tr><td><kbd>F1</kbd>–<kbd>F5</kbd></td><td>top row (bottom-bar labels)</td></tr>
+    </table>
+    <p>On the keypad: letter fields read each key as its <b style="color:#4c9a2a">green letter</b> (A-lock is always on), so there's no need to press [alpha].</p>
+
+    <h2>Differs from the real Evo</h2>
+    <ul>
+      <li><b>Key codes</b> are the CE Python <code>wait_key()</code> codes. TI doesn't publish the Evo's codes, so run <code>KEYTEST</code> on the calc to confirm them.</li>
+      <li><b>Font</b>: the demo uses a fixed 10&times;16&nbsp;px cell. The calc's <code>ti_draw</code> font may be narrower or proportional, which shifts the spacing a little.</li>
+      <li><b>Speed</b>: redraws here are instant. A full-screen redraw on the calc may flicker.</li>
+      <li><b>Glyphs</b>: <code>&times;</code> and <code>&middot;</code> may not exist in the calc font. If they look wrong, change one line in <code>stoich_ui.py</code>.</li>
+      <li><b>PC keyboard shortcuts</b> (auto ABC/123 switching, lowercase picks) exist only in the demo. On the calc you press [x,t,&theta;,n] and use the pick list.</li>
+      <li>[2nd]/[alpha]/A-lock are emulated by this page, the way the OS does it.</li>
+    </ul>
+    <pre class="err" id="err" hidden></pre>
+  </aside>
+</main>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script src="evo.js"></script>
+</body>
+</html>

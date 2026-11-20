@@ -1,0 +1,140 @@
+:root {
+  --bg: #e9ecf1;
+  --ink: #1d2230;
+  --muted: #5d6475;
+  --case: #f7f7f5;
+  --case-edge: #d9d9d4;
+  --key: #fbfbfa;
+  --key-ink: #2a2d33;
+  --num: #163c3e;
+  --num-ink: #f2f6f6;
+  --second: #1a8fd6;
+  --alpha: #4c9a2a;
+  --panel: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #14171d; --ink: #e8eaf0; --muted: #9aa1b2; --panel: #1d2129; }
+}
+:root[data-theme="dark"] { --bg: #14171d; --ink: #e8eaf0; --muted: #9aa1b2; --panel: #1d2129; }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.stage {
+  min-height: 100%;
+  display: flex;
+  gap: 32px;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 16px;
+  flex-wrap: wrap;
+}
+.fit { flex: none; }
+.fit .calc { transform-origin: top left; }
+
+/* ---------- calculator body ---------- */
+.calc {
+  width: 470px;
+  background: linear-gradient(180deg, #ffffff 0%, var(--case) 40%, #efefec 100%);
+  border: 1px solid var(--case-edge);
+  border-radius: 34px 34px 70px 70px;
+  padding: 18px 26px 26px;
+  box-shadow: 0 30px 60px rgba(0,0,0,.25), inset 0 2px 0 #fff, inset 0 -6px 14px rgba(0,0,0,.06);
+  user-select: none;
+}
+.brand { text-align: center; font-weight: 700; font-size: 20px; letter-spacing: .5px; color: #2b2f36; margin: 2px 0 12px; }
+.bezel {
+  position: relative;
+  background: #15171a;
+  border-radius: 14px;
+  padding: 14px 17px 18px;
+  box-shadow: inset 0 0 0 2px #2a2d31;
+}
+#scr { display: block; width: 384px; height: 288px; background: #fff; border-radius: 2px; image-rendering: auto; }
+.loading {
+  position: absolute; inset: 14px 17px 18px;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff; color: #333; font: 600 15px ui-monospace, Consolas, monospace;
+}
+.loading[hidden] { display: none; }
+.status { height: 18px; margin: 6px 4px 4px; display: flex; gap: 8px; justify-content: flex-end; font: 600 11px system-ui; }
+.status span { opacity: 0; padding: 0 6px; border-radius: 4px; color: #fff; transition: opacity .1s; }
+.status span.on { opacity: 1; }
+#ind2nd { background: var(--second); }
+#indAlpha, #indLock { background: var(--alpha); }
+
+/* ---------- keypad ---------- */
+.keys {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 13px 12px;
+  padding: 6px 4px 0;
+}
+.key {
+  position: relative;
+  height: 44px;
+  border: none;
+  border-radius: 9px;
+  background: var(--key);
+  color: var(--key-ink);
+  font: 600 14px system-ui, sans-serif;
+  box-shadow: 0 3px 0 #c9cac6, 0 4px 6px rgba(0,0,0,.18), inset 0 1px 0 #fff;
+  cursor: pointer;
+  padding: 0;
+  margin-top: 13px;
+}
+.key:active, .key.flash { transform: translateY(2px); box-shadow: 0 1px 0 #c9cac6, 0 1px 3px rgba(0,0,0,.2); }
+.key .sec, .key .al {
+  position: absolute; top: -15px; font: 600 10px system-ui, sans-serif; white-space: nowrap; pointer-events: none;
+}
+.key .sec { left: 2px; color: var(--second); }
+.key .al { right: 3px; color: var(--alpha); }
+.key.num { background: var(--num); color: var(--num-ink); font-size: 19px; box-shadow: 0 3px 0 #0a2223, 0 4px 6px rgba(0,0,0,.25), inset 0 1px 0 #2c5759; }
+.key.k2nd { background: var(--second); color: #fff; box-shadow: 0 3px 0 #116aa0, 0 4px 6px rgba(0,0,0,.2); }
+.key.kalpha { background: var(--alpha); color: #fff; box-shadow: 0 3px 0 #35701c, 0 4px 6px rgba(0,0,0,.2); }
+.key.fn { height: 30px; border-radius: 15px; font-size: 12px; }
+.key.small { font-size: 12px; }
+.key.on.lit { outline: 2px solid var(--second); }
+
+.dpad {
+  grid-column: 4 / span 2; grid-row: span 2;
+  position: relative; width: 120px; height: 120px; justify-self: center; margin-top: 4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #2b2f36 0 22%, #1f2228 23% 100%);
+  box-shadow: 0 4px 8px rgba(0,0,0,.3);
+}
+.dpad button {
+  position: absolute; width: 40px; height: 40px; border: none; background: transparent; color: #e7e9ee;
+  font-size: 18px; cursor: pointer; border-radius: 8px;
+}
+.dpad button:active, .dpad button.flash { background: rgba(255,255,255,.18); }
+.dpad .u { left: 40px; top: 2px; } .dpad .d { left: 40px; bottom: 2px; }
+.dpad .l { left: 2px; top: 40px; } .dpad .r { right: 2px; top: 40px; }
+
+.ti { text-align: center; margin-top: 22px; font: 600 13px Georgia, serif; color: #4a4d52; letter-spacing: .5px; }
+
+/* ---------- side panel ---------- */
+.side {
+  width: 380px; max-width: 100%;
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.08);
+}
+.side h1 { font-size: 20px; margin: 0 0 6px; }
+.side h1 small { font-weight: 500; color: var(--muted); font-size: 13px; }
+.side h2 { font-size: 14px; margin: 18px 0 6px; }
+.side p, .side li { color: var(--muted); }
+.side ul { padding-left: 18px; margin: 0; }
+.side li { margin-bottom: 6px; }
+.kb { border-collapse: collapse; width: 100%; }
+.kb td { padding: 3px 4px; border-bottom: 1px solid rgba(127,127,127,.15); vertical-align: top; }
+.kb td:first-child { white-space: nowrap; }
+kbd { font: 12px ui-monospace, Consolas, monospace; padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(127,127,127,.4); }
+code { font: 12px ui-monospace, Consolas, monospace; }
+.err { background: #2a1214; color: #ffb3b3; padding: 10px; border-radius: 8px; white-space: pre-wrap; font-size: 11px; max-height: 260px; overflow: auto; }
+@media (max-width: 560px) { .stage { padding: 8px 16px; } }
