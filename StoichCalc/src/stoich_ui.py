@@ -1,42 +1,47 @@
 # stoich_ui.py - screens + key handling for the TI-84 Evo (ti_draw + ti_system).
 # Event driven: App.key(code) updates state and redraws. On the calculator,
 # main() feeds it ti_system.wait_key(); the web demo feeds it clicks.
-from ti_draw import clear, set_color, fill_rect, draw_line, draw_text
+from ti_draw import set_color, fill_rect, draw_line, draw_text
 from chemcore import (TEACHER, PRECISE, G, MOL, PT, ChemError,
                       parse_formula, parse_symbols, compound_from_formula,
                       compound_from_counts, elem_mass, molar_mass, check_mass_str,
                       solve, candidates, PTYPES, PSHORT)
 
 # ---------------------------------------------------------------- tunables
+# Evo ti_draw: drawable area is 320x210, 10 px per character, and draw_text's
+# y is BELOW the letters (glyphs fill y-17 .. y-3), hence TEXT_DY.
 W = 320
-H = 240
-CW = 10          # assumed ti_draw character width  (check with KEYTEST)
-CH = 16          # assumed line height
-TEXT_DY = 0      # shift if draw_text's y turns out to be the baseline
-TIMES = "×"  # multiplication sign; change to "x" if it shows as junk
-DOT = "·"    # hydrate dot
+H = 210
+CW = 10
+CH = 16          # line height used for layout (glyphs are 15 px tall)
+TEXT_DY = 17
+TIMES = "x"      # ASCII: the Evo font's support for the x-sign glyph is unverified
+DOT = "."        # hydrate dot
 
 # ---------------------------------------------------------------- key codes
-# TI-OS GetKey codes as returned by ti_system.wait_key() on the CE Python.
-# If KEYTEST shows different numbers on the Evo, edit them here.
-K_RIGHT, K_LEFT, K_UP, K_DOWN, K_ENTER = 1, 2, 3, 4, 5
-K_CLEAR, K_DEL = 9, 10
-K_F1, K_F2, K_F3, K_F4, K_F5 = 73, 72, 46, 90, 68   # y= window zoom trace graph
-K_QUIT = 64
-K_SUB, K_MUL = 129, 130
-K_LPAR, K_RPAR, K_LBRK, K_RBRK = 133, 134, 135, 136
-K_NEG, K_DOT = 140, 141
-K_0 = 142                    # K_0..K_9 = 142..151
-K_EE = 152
-K_A = 154                    # OS alpha letters A..Z = 154..179 (if [alpha] is used)
-K_VARX = 180                 # [x,t,theta,n]: 123/ABC toggle, lazy separator
-ALPHA_FLAG = 512             # in case wait_key reports alpha as +512 on the base key
-# Letter printed (green) on each key -> that key's plain code. Letter fields
-# read keys through this, so they act as if A-lock is always on.
-LETTER_KEYS = {50: "A", 44: "B", 45: "C", 132: "D", 182: "D", 183: "E", 185: "F",
-               187: "G", 131: "H", 189: "I", 139: "J", 133: "K", 134: "L", 130: "M",
-               193: "N", 149: "O", 150: "P", 151: "Q", 129: "R", 191: "S", 146: "T",
-               147: "U", 148: "V", 128: "W", 138: "X", 143: "Y", 144: "Z"}
+# Evo ti_system.wait_key() returns TI-BASIC getKey codes (row*10 + column):
+# [2nd] and [alpha] come in as their own presses (21, 31), so 2nd is tracked here.
+K_F1, K_F2, K_F3, K_F4, K_F5 = 11, 12, 13, 14, 15   # y= window zoom trace graph
+K_2ND, K_MODE, K_DEL = 21, 22, 23
+K_LEFT, K_UP, K_RIGHT, K_DOWN = 24, 25, 26, 34
+K_ALPHA, K_VARX = 31, 32     # [x,t,theta,n]: 123/ABC toggle, lazy separator
+K_CLEAR, K_ENTER = 45, 105
+K_COMMA, K_LPAR, K_RPAR = 62, 63, 64
+K_DOT, K_NEG = 103, 104
+DIGIT_KEYS = {102: 0, 92: 1, 93: 2, 94: 3, 82: 4, 83: 5, 84: 6, 72: 7, 73: 8, 74: 9}
+K_MUL = 65                   # [x] key
+# The Evo moved the operator keys around; which code each one sends is unverified,
+# so accept both the 84+ code and the Evo-position code where it's harmless.
+TIMES_KEYS = (65, 75)
+MINUS_KEYS = (75, 85)
+# [2nd] combos become these virtual codes
+K_QUIT, K_EE, K_LBRK, K_RBRK = 2022, 2062, 2063, 2064
+# Green letter printed on each key (same spots as the 84+). Letter fields read
+# keys through this, so they act as if A-lock is always on.
+LETTER_KEYS = {41: "A", 42: "B", 43: "C", 51: "D", 52: "E", 53: "F", 54: "G", 55: "H",
+               61: "I", 62: "J", 63: "K", 64: "L", 65: "M", 71: "N", 72: "O", 73: "P",
+               74: "Q", 75: "R", 81: "S", 82: "T", 83: "U", 84: "V", 85: "W", 91: "X",
+               92: "Y", 93: "Z"}
 
 # ---------------------------------------------------------------- colors
 BG = (255, 255, 255)
@@ -55,18 +60,126 @@ TEAL = (0, 130, 140)
 
 
 # ---------------------------------------------------------------- drawing helpers
+# Screens don't draw directly: box/ln/txt build a display list, and present()
+# repaints only the rectangles where it differs from what's already on screen
+# (redrawing all 320x210 px per key is slow and flashes on the Evo).
+BOX, LINE, TXT = 0, 1, 2
+_ops = []                # frame being built
+_shown = [None]          # ops on screen now; None = unknown, repaint everything
+_cur = [None]
+
+
 def col(c):
-    set_color(c[0], c[1], c[2])
+    if _cur[0] != c:             # set_color is slow on the Evo: skip repeats
+        _cur[0] = c
+        set_color(c[0], c[1], c[2])
 
 
 def box(x, y, w, h, c):
-    col(c)
-    fill_rect(x, y, w, h)
+    if w >= 1 and h >= 1:
+        _ops.append((BOX, x, y, x + w - 1, y + h - 1, c))
+
+
+def ln(x1, y1, x2, y2, c):
+    # shortcut: lines must be horizontal/vertical, so clipping one to a rect is
+    # just its bbox; a diagonal line would need real clipping.
+    _ops.append((LINE, min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2), c))
 
 
 def txt(x, y, s, c=FG):
+    if s:
+        _ops.append((TXT, x, y, s, c))
+
+
+def bbox(o):
+    if o[0] == TXT:              # glyphs fill y..y+14 here, 10 px per char
+        return (o[1], o[2] - 1, o[1] + len(o[3]) * CW - 1, o[2] + CH)
+    return o[1:5]
+
+
+def cells(o, r):
+    """Text can't be clipped, but a substring can be drawn: the char cells of
+    text op o that rect r touches -> (their bbox, first index, last index)."""
+    x = o[1]
+    i = max(0, (r[0] - x) // CW)
+    j = min(len(o[3]) - 1, (r[2] - x) // CW)
+    return (x + i * CW, o[2] - 1, x + j * CW + CW - 1, o[2] + CH), i, j
+
+
+def _hit(a, b):
+    return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
+
+
+def _join(a, b):
+    return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+
+
+def dirty(old, new):
+    """Rects to repaint: wherever an op appeared or vanished, grown until no
+    character straddles an edge and merged where they touch."""
+    if old is None:
+        return [(0, 0, W - 1, H - 1)]
+    so, sn = set(old), set(new)
+    todo = [bbox(o) for o in old if o not in sn] + [bbox(o) for o in new if o not in so]
+    texts = [o for o in new if o[0] == TXT]
+    out = []
+    while todo:
+        r = todo.pop()
+        for q in out:
+            if _hit(r, q):
+                out.remove(q)
+                todo.append(_join(r, q))
+                break
+        else:
+            for t in texts:
+                if _hit(r, bbox(t)):
+                    c = _join(r, cells(t, r)[0])
+                    if c != r:
+                        todo.append(c)
+                        break
+            else:
+                out.append(r)
+    return out
+
+
+def _fill(b, c):
+    """Exact fill of bbox b. Evo fill_rect paints only inside its box border
+    (x+1.., w-1 wide), and errors on a size of 1."""
     col(c)
-    draw_text(x, y + TEXT_DY, s)
+    fill_rect(b[0] - 1, b[1] - 1, b[2] - b[0] + 2, b[3] - b[1] + 2)
+
+
+def paint(r, ops):
+    """Background, then every op touching r in order, clipped to r (text by
+    drawing just the chars inside it; dirty() made r hold whole chars)."""
+    x0, y0, x1, y1 = max(r[0], 0), max(r[1], 0), min(r[2], W - 1), min(r[3], H - 1)
+    if x0 > x1 or y0 > y1:
+        return
+    r = (x0, y0, x1, y1)
+    _fill(r, BG)
+    for o in ops:
+        if not _hit(bbox(o), r):
+            continue
+        if o[0] == TXT:
+            c, i, j = cells(o, r)
+            col(o[4])
+            draw_text(c[0], o[2] + TEXT_DY, o[3][i:j + 1])
+            continue
+        b = (max(o[1], x0), max(o[2], y0), min(o[3], x1), min(o[4], y1))
+        if o[0] == BOX:
+            _fill(b, o[5])
+        else:
+            col(o[5])
+            draw_line(b[0], b[1], b[2], b[3])
+
+
+def present():
+    _cur[0] = None
+    new = _ops[:]
+    del _ops[:]
+    for r in dirty(_shown[0], new):
+        paint(r, new)
+    _shown[0] = new
 
 
 def tw(s):
@@ -137,39 +250,41 @@ def softbar(labels):
     for i in range(5):
         lab = labels[i] if i < len(labels) else ""
         if i:
-            col(GRAY)
-            draw_line(i * 64, H - 19, i * 64, H - 1)
+            ln(i * 64, H - 19, i * 64, H - 1, GRAY)
         if lab:
             txt(i * 64 + (64 - tw(lab)) // 2, H - 18, lab, HDR)
 
 
+MSG_Y = H - 37
+
+
 def message(s, c=RED):
     if s:
-        txt(4, H - 38, s[:W // CW - 1], c)
+        txt(4, MSG_Y, s[:W // CW - 1], c)
+
+
+def hint(app, y, s, c=None):
+    """Bottom hint line; the error message takes its place when there is one."""
+    if not (app.msg and y + CH > MSG_Y):
+        txt(6, y, s, c or GRAY)
 
 
 # ---------------------------------------------------------------- key decoding
 def letter_of(k):
     """Letter for a key in a letters-only field (auto A-lock), else None."""
-    if K_A <= k < K_A + 26:
-        return chr(65 + k - K_A)
-    if k >= ALPHA_FLAG:
-        k -= ALPHA_FLAG
     return LETTER_KEYS.get(k)
 
 
 def num_char(k):
     """Character for a key in a number/punctuation context, else None."""
-    if K_0 <= k <= K_0 + 9:
-        return chr(48 + k - K_0)
+    if k in DIGIT_KEYS:
+        return str(DIGIT_KEYS[k])
     return {K_DOT: ".", K_LPAR: "(", K_RPAR: ")", K_LBRK: "[", K_RBRK: "]",
-            K_MUL: "*", K_NEG: "-", K_SUB: "-", K_EE: "E"}.get(k)
+            K_NEG: "-", K_EE: "E"}.get(k)
 
 
 def digit(k):
-    if K_0 <= k <= K_0 + 9:
-        return k - K_0
-    return None
+    return DIGIT_KEYS.get(k)
 
 
 def drop_last_symbol(s):
@@ -209,9 +324,22 @@ class App:
         self.res = None            # Teacher result (drawn as the chain)
         self.resp = None           # Precise result (answer only)
         self.hscroll = 0
+        self.second = False        # [2nd] was the last key
+        self._chain = None
+        _shown[0] = None           # new run: screen contents unknown
 
     # ----- top level
     def key(self, k):
+        if k == K_2ND:
+            self.second = not self.second
+            self.draw()
+            return
+        if k == K_ALPHA:           # letter fields never need [alpha]
+            return
+        if self.second:
+            self.second = False
+            if k in (K_MODE, K_COMMA, K_LPAR, K_RPAR):
+                k += 2000          # quit, EE, [, ]
         self.msg = ""
         if k == K_QUIT:
             self.running = False
@@ -224,11 +352,14 @@ class App:
             self.draw()
 
     def draw(self):
-        clear()
-        box(0, 0, W, H, BG)
+        self._chain = None
         getattr(self, "d_" + self.scr)()
         if self.pick is not None:
             self.d_pick()
+        if self.second:                    # '2nd' tag at the top right
+            box(W - 40, 0, 40, 20, YELLOW)
+            txt(W - 35, 2, "2nd", FG)
+        present()
 
     def go(self, scr):
         self.scr = scr
@@ -336,12 +467,12 @@ class App:
                  "  or keep typing = top choice",
                  "[x,t,0,n] formula: ABC <-> 123",
                  "[x,t,0,n] lazy: next element",
-                 "123 mode: [x] = hydrate dot",
-                 "[2nd][EE]/[x] x10^ in values",
+                 "123 mode: [.] = hydrate dot",
+                 "Values: [,] = x10^ (-) = neg",
                  "[clear] back   [del] erase",
                  "[2nd][quit]  exit")
         for i in range(len(lines)):
-            txt(4, 26 + i * 18, lines[i], FG)
+            txt(4, 26 + i * CH, lines[i], FG)
         softbar(("", "", "", "", "BACK"))
 
     def k_help(self, k):
@@ -361,16 +492,16 @@ class App:
                 line = ""
                 for s in order:
                     line += s + ":" + str(cnt[s]) + "  "
-                txt(6, 84, line[:31], FG)
-                txt(6, 104, "M = " + molar_mass(c, TEACHER)[1] + " g/mol", GREEN)
-                txt(6, 124, c.ptype, GRAY)
+                txt(6, 80, line[:31], FG)
+                txt(6, 98, "M = " + molar_mass(c, TEACHER)[1] + " g/mol", GREEN)
+                txt(6, 116, c.ptype, GRAY)
             except ChemError as e:
                 s = str(e)
-                txt(6, 84, s[:31], RED)
+                txt(6, 80, s[:31], RED)
                 if len(s) > 31:
-                    txt(6, 102, s[31:62], RED)
-        txt(6, 150, "[x,t,0,n]: ABC / 123", HDR)
-        txt(6, 168, "123: digits ( ) [x]=dot", GRAY)
+                    txt(6, 98, s[31:62], RED)
+        txt(6, 136, "[x,t,0,n]: ABC / 123", HDR)
+        hint(self, 154, "123: digits ( ) [.]=dot")
         message(self.msg)
         softbar(("LAZY", "", "", "MENU", "NEXT"))
 
@@ -396,15 +527,12 @@ class App:
             self.ftext = drop_last_symbol(self.ftext)
         elif k == K_VARX:
             self.fnum = not self.fnum
-        elif K_A <= k < K_A + 26:                      # explicit [alpha] letter
-            self.fnum = False
-            self.letter_typed(letter_of(k), "f")
         elif not self.fnum:
             L = letter_of(k)
             if L:
                 self.letter_typed(L, "f")
         else:
-            ch = num_char(k)
+            ch = "*" if (k == K_DOT or k in TIMES_KEYS) else num_char(k)
             if ch is not None and ch in "0123456789()[]*" and len(self.ftext) < 24:
                 self.ftext += ch
                 if ch in "([":
@@ -489,9 +617,9 @@ class App:
             f += s + (str(n) if n != 1 else "")
         header([("Lazy: ", 0, FG)] + form_segs(f))
         top = 0
-        if self.lsel > 6:
-            top = self.lsel - 6
-        for i in range(top, min(len(self.lsyms), top + 7)):
+        if self.lsel > 5:
+            top = self.lsel - 5
+        for i in range(top, min(len(self.lsyms), top + 6)):
             s = self.lsyms[i]
             y = 28 + (i - top) * 24
             if i == self.lsel:
@@ -547,10 +675,10 @@ class App:
         for s in c.order:
             rows.append((s + " x" + str(c.counts[s]), elem_mass(c, s, TEACHER)))
         top = 0
-        if self.msel > 6:
-            top = self.msel - 6
-        for i in range(top, min(len(rows), top + 7)):
-            y = 26 + (i - top) * 23
+        if self.msel > 5:
+            top = self.msel - 5
+        for i in range(top, min(len(rows), top + 6)):
+            y = 26 + (i - top) * 22
             lab, (v, s, ov) = rows[i]
             if i == self.msel:
                 box(2, y - 3, W - 4, 21, SEL)
@@ -564,7 +692,7 @@ class App:
             else:
                 txt(154, y, s + (" *" if ov else ""), ORANGE if ov else FG)
             txt(250, y, "g/mol" if i == 0 else "", GRAY)
-        txt(6, 190, "0-9: type amu  [del]: reset", GRAY)
+        hint(self, 158, "0-9: type amu  [del]: reset")
         message(self.msg)
         softbar(("BACK", "RESET", "", "MENU", "NEXT"))
 
@@ -666,7 +794,7 @@ class App:
                         segs = [(s[0], s[1], WHITE) for s in segs]
                     draw_segs(x, y, segs)
                     x += w + 12
-        txt(6, 172, "</>: pick   0-9: shortcut", GRAY)
+        hint(self, 170, "</>: pick   0-9: shortcut")
         message(self.msg)
         softbar(("BACK", "PTCL", "", "MENU", "SOLVE"))
 
@@ -696,8 +824,10 @@ class App:
             if k == K_DEL:
                 self.gval = self.gval[:-1]
                 return
-            if k == K_MUL:
+            if k == K_COMMA:
                 k = K_EE
+            elif k in MINUS_KEYS:
+                k = K_NEG
             ch = num_char(k)
             if ch is None or ch not in "0123456789.E-" or len(self.gval) >= 16:
                 return
@@ -794,28 +924,27 @@ class App:
         xe = draw_segs(tx, y, top)
         if cancel_top:
             ux = xe - segs_w([s for s in top if s[2] == GRAY])
-            col(RED)
-            draw_line(ux, y + CH // 2, xe - 2, y + CH // 2)
+            ln(ux, y + CH // 2, xe - 2, y + CH // 2, RED)
         if bot:
-            col(FG)
-            draw_line(x + 2, y + CH + 3, x + w - 2, y + CH + 3)
+            ln(x + 2, y + CH + 3, x + w - 2, y + CH + 3, FG)
             bx = x + (w - segs_w(bot)) // 2
             be = draw_segs(bx, y + CH + 7, bot)
             ux = be - segs_w([s for s in bot if s[2] == GRAY])
-            col(RED)
-            draw_line(ux, y + CH + 7 + CH // 2, be - 2, y + CH + 7 + CH // 2)
-        col(GRAY)
-        draw_line(x + w - 1, y - 2, x + w - 1, y + 2 * CH + 8)
+            ln(ux, y + CH + 7 + CH // 2, be - 2, y + CH + 7 + CH // 2, RED)
+        ln(x + w - 1, y - 2, x + w - 1, y + 2 * CH + 8, GRAY)
 
     def max_scroll(self):
-        return max(0, self.chain()[1] - (W - 8))
+        if self._chain is None:
+            self._chain = self.chain()
+        return max(0, self._chain[1] - (W - 8))
 
     def d_ans(self):
         c = self.cmp
         mv, ms, ov = molar_mass(c, TEACHER)
         header(form_segs(c.formula) + [("  M=" + ms + ("*" if ov else ""), 0, WHITE)])
-        items, total = self.chain()
-        y = 34
+        self.max_scroll()
+        items, total = self._chain
+        y = 28
         for (x, w, top, bot, ct) in items:
             sx = 4 + x - self.hscroll
             if sx + w < 0 or sx > W:
@@ -827,9 +956,8 @@ class App:
         if self.hscroll < self.max_scroll():
             box(W - 12, y - 4, 12, 2 * CH + 14, YELLOW)
             txt(W - 11, y + CH // 2, ">", FG)
-        col(LIGHT)
-        draw_line(0, 86, W, 86)
-        rows = ((self.res, "TEACHER", ORANGE, 96), (self.resp, "PRECISE", TEAL, 140))
+        ln(0, 72, W - 1, 72, LIGHT)
+        rows = ((self.res, "TEACHER", ORANGE, 78), (self.resp, "PRECISE", TEAL, 118))
         for (r, name, cc, yy) in rows:
             box(0, yy - 3, W, 22, ANSBG)
             box(4, yy - 1, 20, 18, cc)
@@ -840,16 +968,16 @@ class App:
                 if 24 + segs_w(segs) <= W:
                     break
             draw_segs(24, yy, segs)
-            draw_segs(28, yy + 21, [("raw ", 0, GRAY)] + num_segs(r["full"], GRAY))
+            draw_segs(28, yy + 20, [("raw ", 0, GRAY)] + num_segs(r["full"], GRAY))
         if self.res["ambiguous"]:
             note = "zeros ambiguous -> 6 s.f."
         elif self.res["capped"]:
             note = "capped at 6 s.f."
         else:
             note = str(self.res["sf"]) + " s.f. (from given)"
-        txt(6, 186, note, GRAY)
+        txt(6, 158, note, GRAY)
         if self.max_scroll() > 0:
-            txt(6, 202, "</>: scroll the work", GRAY)
+            txt(6, 174, "</>: scroll the work", GRAY)
         softbar(("EDIT", "MASS", "NEW", "", "MENU"))
 
     def k_ans(self, k):
@@ -875,7 +1003,17 @@ class App:
 def main():
     from ti_system import wait_key
     app = App()
-    app.draw()
-    while app.running:
-        app.key(wait_key())
-    clear()
+    try:
+        app.draw()
+        while app.running:
+            app.key(wait_key())
+    except Exception as e:                # show it instead of dying silently
+        del _ops[:]
+        _shown[0] = None
+        txt(4, 4, "STOICH error (screen: " + app.scr + ")", RED)
+        s = repr(e)
+        for i in range(0, min(len(s), 31 * 8), 31):
+            txt(4, 24 + i // 31 * CH, s[i:i + 31], FG)
+        txt(4, 170, "any key: exit", GRAY)
+        present()
+        wait_key()

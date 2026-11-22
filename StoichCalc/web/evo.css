@@ -54,7 +54,7 @@ body {
   padding: 14px 17px 18px;
   box-shadow: inset 0 0 0 2px #2a2d31;
 }
-#scr { display: block; width: 384px; height: 288px; background: #fff; border-radius: 2px; image-rendering: auto; }
+#scr { display: block; width: 384px; height: 252px; background: #fff; border-radius: 2px; image-rendering: auto; }
 .loading {
   position: absolute; inset: 14px 17px 18px;
   display: flex; align-items: center; justify-content: center;

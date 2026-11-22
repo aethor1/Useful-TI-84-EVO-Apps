@@ -1,7 +1,7 @@
 # Browser shim for TI's ti_draw: forwards to JS canvas functions (web/evo.js).
+# Mimics the Evo quirks: fill_rect paints only inside its box border, a 1-px
+# size errors, and draw_text's y sits below the letters (glyphs at y-17..y-3).
 import js
-
-_c = [0, 0, 0]
 
 
 def clear():
@@ -9,16 +9,13 @@ def clear():
 
 
 def set_color(r, g, b):
-    _c[0], _c[1], _c[2] = int(r), int(g), int(b)
-    js.tiColor(_c[0], _c[1], _c[2])
+    js.tiColor(int(r), int(g), int(b))
 
 
 def fill_rect(x, y, w, h):
-    js.tiFillRect(int(x), int(y), int(w), int(h))
-
-
-def draw_rect(x, y, w, h):
-    js.tiDrawRect(int(x), int(y), int(w), int(h))
+    if w < 2 or h < 2:
+        raise ValueError("tidrawException: fill_rect size must be >= 2")
+    js.tiFillRect(int(x) + 1, int(y) + 1, int(w) - 1, int(h) - 1)
 
 
 def draw_line(x1, y1, x2, y2):
@@ -26,8 +23,4 @@ def draw_line(x1, y1, x2, y2):
 
 
 def draw_text(x, y, s):
-    js.tiText(int(x), int(y), str(s))
-
-
-def show_draw():
-    pass
+    js.tiText(int(x), int(y) - 17, str(s))

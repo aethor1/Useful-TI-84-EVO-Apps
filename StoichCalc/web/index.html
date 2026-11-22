@@ -12,7 +12,7 @@
     <div class="calc" id="calc">
       <div class="brand">TI-84 Evo</div>
       <div class="bezel">
-        <canvas id="scr" width="960" height="720" aria-label="Calculator screen"></canvas>
+        <canvas id="scr" width="960" height="630" aria-label="Calculator screen"></canvas>
         <div class="loading" id="loading">Loading Python&hellip;</div>
       </div>
       <div class="status"><span id="ind2nd">2nd</span><span id="indAlpha">alpha</span><span id="indLock">A-lock</span></div>
@@ -29,8 +29,8 @@
     <table class="kb">
       <tr><td><kbd>N</kbd> <kbd>a</kbd></td><td>letters: type <code>NaCl</code> normally. A lowercase letter picks the 2-letter symbol from the list</td></tr>
       <tr><td><kbd>0</kbd>–<kbd>9</kbd> <kbd>(</kbd> <kbd>)</kbd> <kbd>.</kbd></td><td>numbers. The page presses [x,t,&theta;,n] for you to switch ABC&rarr;123</td></tr>
-      <tr><td><kbd>*</kbd></td><td>[&times;]: hydrate dot / &times;10^</td></tr>
-      <tr><td><kbd>-</kbd></td><td>[&minus;] (negative exponent)</td></tr>
+      <tr><td><kbd>*</kbd> <kbd>.</kbd></td><td>formula: hydrate dot</td></tr>
+      <tr><td><kbd>E</kbd> <kbd>-</kbd></td><td>value field: &times;10^ ([,] key) and negative exponent</td></tr>
       <tr><td><kbd>,</kbd> / <kbd>Space</kbd></td><td>lazy mode: next element</td></tr>
       <tr><td><kbd>Tab</kbd></td><td>[x,t,&theta;,n]</td></tr>
       <tr><td><kbd>Enter</kbd> <kbd>Bksp</kbd> <kbd>Esc</kbd></td><td>enter / del / clear</td></tr>
@@ -41,12 +41,11 @@
 
     <h2>Differs from the real Evo</h2>
     <ul>
-      <li><b>Key codes</b> are the CE Python <code>wait_key()</code> codes. TI doesn't publish the Evo's codes, so run <code>KEYTEST</code> on the calc to confirm them.</li>
-      <li><b>Font</b>: the demo uses a fixed 10&times;16&nbsp;px cell. The calc's <code>ti_draw</code> font may be narrower or proportional, which shifts the spacing a little.</li>
-      <li><b>Speed</b>: redraws here are instant. A full-screen redraw on the calc may flicker.</li>
-      <li><b>Glyphs</b>: <code>&times;</code> and <code>&middot;</code> may not exist in the calc font. If they look wrong, change one line in <code>stoich_ui.py</code>.</li>
+      <li><b>Key codes</b> are the Evo's TI-BASIC-style <code>wait_key()</code> codes. The operator keys (&times; &minus; +) moved on the Evo, so run <code>KEYTEST</code> on the calc to confirm those.</li>
+      <li><b>Font</b>: the demo uses a fixed 10&times;16&nbsp;px cell, like the calc's 10&nbsp;px-wide font.</li>
+      <li><b>Speed</b>: redraws here are instant. The calc is slower.</li>
       <li><b>PC keyboard shortcuts</b> (auto ABC/123 switching, lowercase picks) exist only in the demo. On the calc you press [x,t,&theta;,n] and use the pick list.</li>
-      <li>[2nd]/[alpha]/A-lock are emulated by this page, the way the OS does it.</li>
+      <li>[2nd] is handled by STOICH itself, as on the calc. [alpha] does nothing.</li>
     </ul>
     <pre class="err" id="err" hidden></pre>
   </aside>

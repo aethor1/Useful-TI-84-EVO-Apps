@@ -7,14 +7,47 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-CALLS = []
+# Fake Evo screen: a 320x210 pixel grid, so partial repaints can be compared
+# with a from-scratch render. Text paints each character's 10x15 cell.
+FB = [None]
+COLOR = [None]
+
+
+def blank():
+    return [[None] * 320 for _ in range(210)]
+
+
+def plot(x0, y0, x1, y1, v):
+    x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, 319), min(y1, 209)
+    if x0 > x1:
+        return
+    for y in range(y0, y1 + 1):
+        FB[0][y][x0:x1 + 1] = [v] * (x1 - x0 + 1)
+
+
+def fake_fill(x, y, w, h):
+    # Evo raises tidrawException for a 1-px (or smaller) fill, paints inside the border
+    assert w >= 2 and h >= 2, "fill_rect size %r x %r" % (w, h)
+    plot(x + 1, y + 1, x + w - 1, y + h - 1, COLOR[0])
+
+
+def fake_line(x1, y1, x2, y2):
+    assert x1 == x2 or y1 == y2, "diagonal line"
+    plot(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2), COLOR[0])
+
+
+def fake_text(x, y, s):
+    for i, ch in enumerate(s):
+        plot(x + i * 10, y - 17, x + i * 10 + 9, y - 3, (ch, COLOR[0]))
+
+
 fake = types.ModuleType("ti_draw")
-fake.clear = lambda: CALLS.clear()
-fake.set_color = lambda r, g, b: None
-fake.fill_rect = lambda x, y, w, h: None
-fake.draw_line = lambda a, b, c, d: None
-fake.draw_text = lambda x, y, s: CALLS.append((x, y, s))
+fake.set_color = lambda r, g, b: COLOR.__setitem__(0, (r, g, b))
+fake.fill_rect = fake_fill
+fake.draw_line = fake_line
+fake.draw_text = fake_text
 sys.modules["ti_draw"] = fake
+FB[0] = blank()
 
 import stoich_ui as ui  # noqa: E402
 from chemcore import num_text, candidates  # noqa: E402
@@ -22,9 +55,10 @@ from chemcore import num_text, candidates  # noqa: E402
 KEY_OF = {}
 for code, letter in ui.LETTER_KEYS.items():
     KEY_OF.setdefault(letter, code)
-DIG = {str(i): ui.K_0 + i for i in range(10)}
-PUNCT = {"(": ui.K_LPAR, ")": ui.K_RPAR, "*": ui.K_MUL, ".": ui.K_DOT, "E": ui.K_EE,
-         "-": ui.K_NEG, "[": ui.K_LBRK, "]": ui.K_RBRK}
+DIG = {str(v): k for k, v in ui.DIGIT_KEYS.items()}
+PUNCT = {"(": [ui.K_LPAR], ")": [ui.K_RPAR], "*": [ui.K_DOT], ".": [ui.K_DOT],
+         "E": [ui.K_COMMA], "-": [ui.K_NEG], "[": [ui.K_2ND, ui.K_LPAR],
+         "]": [ui.K_2ND, ui.K_RPAR]}
 
 
 def tokens(f):
@@ -44,7 +78,10 @@ def tokens(f):
 
 
 def num_keys(text):
-    return [PUNCT[c] if c in PUNCT else DIG[c] for c in text]
+    out = []
+    for c in text:
+        out += PUNCT[c] if c in PUNCT else [DIG[c]]
+    return out
 
 
 class UIFlow(unittest.TestCase):
@@ -60,12 +97,30 @@ class UIFlow(unittest.TestCase):
             self.check_fits()
 
     def check_fits(self):
-        for (x, y, s) in CALLS:
+        if not self.app.running:
+            return
+        for o in ui._shown[0]:
+            if o[0] != ui.TXT:
+                continue
+            x, y, s = o[1], o[2], o[3]   # layout y: glyphs fill y .. y+14
+            self.assertGreaterEqual(y, 0, "%s: %r above screen" % (self.app.scr, s))
+            self.assertLessEqual(y + 14, ui.H - 1, "%s: %r below screen" % (self.app.scr, s))
             if self.app.scr == "ans" and y < 80:
                 continue        # the chain line scrolls; off-screen parts are expected
             self.assertGreaterEqual(x, 0, "%s: %r" % (self.app.scr, s))
             self.assertLessEqual(x + len(s) * ui.CW, ui.W + 1,
                                  "text runs off screen on %s: %r" % (self.app.scr, s))
+        # the partial repaint must leave exactly what a full redraw would
+        shown = FB[0]
+        FB[0] = blank()
+        ui.paint((0, 0, ui.W - 1, ui.H - 1), ui._shown[0])
+        full = FB[0]
+        FB[0] = shown
+        for y in range(ui.H):
+            if shown[y] != full[y]:
+                x = next(i for i in range(ui.W) if shown[y][i] != full[y][i])
+                self.fail("%s: stale pixel at (%d, %d): %r vs %r"
+                          % (self.app.scr, x, y, shown[y][x], full[y][x]))
 
     def type_symbol(self, sym):
         self.press(KEY_OF[sym[0]])
@@ -209,9 +264,30 @@ class UIFlow(unittest.TestCase):
     def test_menu_has_no_constants_toggle(self):
         self.assertNotIn("Constants", " ".join(ui.MENU))
 
+    def test_second_key(self):
+        self.press(ui.K_2ND, ui.K_2ND)               # toggles off again
+        self.assertTrue(self.app.running)
+        self.assertFalse(self.app.second)
+        self.press(ui.K_ALPHA, DIG["1"])             # [alpha] is ignored
+        self.assertEqual(self.app.scr, "formula")
+        self.press(ui.K_2ND, ui.K_MODE)              # [2nd][quit]
+        self.assertFalse(self.app.running)
+
     def test_all_screens_draw(self):
         for k in (DIG["3"], ui.K_CLEAR, DIG["2"], ui.K_F1, ui.K_F4):
             self.press(k)
+
+    def test_moving_cursor_repaints_little(self):
+        painted = []
+        real = ui.paint
+        ui.paint = lambda r, ops: (painted.append(r), real(r, ops))
+        try:
+            self.app.key(ui.K_DOWN)                  # menu: highlight moves one row
+        finally:
+            ui.paint = real
+        self.check_fits()
+        area = sum((r[2] - r[0] + 1) * (r[3] - r[1] + 1) for r in painted)
+        self.assertLess(area, ui.W * ui.H // 3, painted)
 
 
 class Bundle(unittest.TestCase):
@@ -224,7 +300,7 @@ class Bundle(unittest.TestCase):
         seq = iter([DIG["1"], KEY_OF["N"], KEY_OF["H"], ui.K_VARX, DIG["3"], ui.K_ENTER,
                     ui.K_ENTER] + num_keys("4.50") +
                    [ui.K_DOWN, DIG["1"], ui.K_DOWN, DIG["0"], ui.K_DOWN, DIG["1"],
-                    ui.K_DOWN, DIG["2"], ui.K_ENTER, ui.K_RIGHT, ui.K_QUIT])
+                    ui.K_DOWN, DIG["2"], ui.K_ENTER, ui.K_RIGHT, ui.K_2ND, ui.K_MODE])
         tis = types.ModuleType("ti_system")
         tis.wait_key = lambda: next(seq)
         sys.modules["ti_system"] = tis

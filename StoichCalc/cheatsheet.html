@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mole Map Card</title>
+<style>
+  @page { size: 5in 3in; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #e9e9e9; font-family: "Segoe UI", Arial, sans-serif; color: #111; }
+  .card { width: 5in; height: 3in; background: #fff; padding: 6px 8px 5px; overflow: hidden;
+          display: flex; flex-direction: column; }
+  @media screen { body { padding: 16px; } .card { zoom: 2; box-shadow: 0 1px 4px #0003; } }
+  @media print { body { background: #fff; } }
+  h1 { font-size: 10px; font-weight: 700; display: flex; justify-content: space-between; }
+  h1 span { font-weight: 400; color: #555; font-size: 8px; }
+  svg { display: block; width: 100%; height: auto; }
+  .low { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; font-size: 8.6px; line-height: 1.35; }
+  .low b { color: #0b5cad; }
+  .low ol, .low ul { padding-left: 10px; }
+  .ex { margin-top: 3px; padding-top: 3px; border-top: 1px solid #ccc; font-size: 8.6px;
+        display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+  .f { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.1; }
+  .f span:first-child { border-bottom: 0.8px solid #111; padding: 0 1px; }
+  s { color: #c0392b; }
+  sub, sup { font-size: 70%; line-height: 0; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Mole Map <span>every route goes through moles · against an arrow = do the opposite</span></h1>
+
+  <svg viewBox="0 0 480 160" font-size="9" text-anchor="middle">
+    <defs>
+      <marker id="a" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto">
+        <path d="M0,0 L6,3 L0,6 z" fill="#111"/>
+      </marker>
+    </defs>
+    <g stroke="#111" stroke-width="1.1" marker-end="url(#a)">
+      <!-- row 1: g cmpd <-> mol cmpd <-> molecules -->
+      <line x1="120" y1="17" x2="184" y2="17"/>
+      <line x1="184" y1="29" x2="120" y2="29"/>
+      <line x1="296" y1="17" x2="360" y2="17"/>
+      <line x1="360" y1="29" x2="296" y2="29"/>
+      <!-- row 2: g elem <-> mol elem <-> atoms -->
+      <line x1="120" y1="117" x2="184" y2="117"/>
+      <line x1="184" y1="129" x2="120" y2="129"/>
+      <line x1="296" y1="117" x2="360" y2="117"/>
+      <line x1="360" y1="129" x2="296" y2="129"/>
+      <!-- down: compound -> element -->
+      <line x1="233" y1="42" x2="233" y2="104"/>
+      <line x1="247" y1="104" x2="247" y2="42"/>
+      <line x1="409" y1="42" x2="409" y2="104"/>
+      <line x1="423" y1="104" x2="423" y2="42"/>
+    </g>
+
+    <!-- arrow labels -->
+    <text x="152" y="12">÷ MM</text>
+    <text x="152" y="40">× MM</text>
+    <text x="328" y="12">× 6.02×10<tspan dy="-3" font-size="6.5">23</tspan></text>
+    <text x="328" y="40">÷ 6.02×10<tspan dy="-3" font-size="6.5">23</tspan></text>
+    <text x="152" y="112">÷ AM</text>
+    <text x="152" y="140">× AM</text>
+    <text x="328" y="112">× 6.02×10<tspan dy="-3" font-size="6.5">23</tspan></text>
+    <text x="328" y="140">÷ 6.02×10<tspan dy="-3" font-size="6.5">23</tspan></text>
+    <text x="228" y="76" text-anchor="end">× sub</text>
+    <text x="252" y="76" text-anchor="start">÷ sub</text>
+    <text x="404" y="76" text-anchor="end">× sub</text>
+    <text x="428" y="76" text-anchor="start">÷ sub</text>
+    <text x="64" y="72" fill="#c0392b" font-size="8">no shortcut:</text>
+    <text x="64" y="82" fill="#c0392b" font-size="8">go through mol</text>
+
+    <!-- boxes -->
+    <g stroke="#111" stroke-width="1">
+      <rect x="12"  y="8"   width="104" height="30" rx="4" fill="#fff"/>
+      <rect x="188" y="8"   width="104" height="30" rx="4" fill="#d9ebff"/>
+      <rect x="364" y="8"   width="104" height="30" rx="4" fill="#fff"/>
+      <rect x="12"  y="108" width="104" height="30" rx="4" fill="#fff"/>
+      <rect x="188" y="108" width="104" height="30" rx="4" fill="#d9ebff"/>
+      <rect x="364" y="108" width="104" height="30" rx="4" fill="#fff"/>
+    </g>
+    <g font-weight="700" font-size="10.5">
+      <text x="64"  y="22">grams</text>
+      <text x="240" y="22">moles</text>
+      <text x="416" y="22">molecules</text>
+      <text x="64"  y="122">grams</text>
+      <text x="240" y="122">moles</text>
+      <text x="416" y="122">atoms</text>
+    </g>
+    <g font-size="7.5" fill="#444">
+      <text x="64"  y="33">of compound</text>
+      <text x="240" y="33">of compound</text>
+      <text x="416" y="33">or formula units</text>
+      <text x="64"  y="133">of one element</text>
+      <text x="240" y="133">of one element</text>
+      <text x="416" y="133">of one element</text>
+    </g>
+    <text x="240" y="156" font-size="8" fill="#555">MM = molar mass (g/mol) · AM = atomic mass · sub = how many of that atom in one formula</text>
+  </svg>
+
+  <div class="low">
+    <div>
+      <b>Setting it up</b>
+      <ol>
+        <li>Write the given: number + unit + what it's of.</li>
+        <li>Trace a path on the map to what you want.</li>
+        <li>Each arrow = one fraction. Unit you <i>have</i> goes on the <b>bottom</b> so it cancels.</li>
+      </ol>
+    </div>
+    <div>
+      <b>Numbers</b>
+      <ul>
+        <li>MM = Σ (sub × AM), each AM to 2 decimals</li>
+        <li>(NO<sub>3</sub>)<sub>2</sub> → N 2, O 6 · hydrate ·5H<sub>2</sub>O → add 5 × 18.02</li>
+        <li>Metal or NH<sub>4</sub> in it → formula units, else molecules</li>
+        <li>Sig figs = the given's (sub, MM, 6.02×10<sup>23</sup> are exact)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="ex">
+    <b style="color:#0b5cad">Ex</b> <span>36.0 g H<sub>2</sub>O → all atoms:</span>
+    <span>36.0 <s>g</s> ×</span>
+    <span class="f"><span>1 <s>mol</s></span><span>18.02 <s>g</s></span></span> <span>×</span>
+    <span class="f"><span>6.02×10<sup>23</sup> <s>molec</s></span><span>1 <s>mol</s></span></span> <span>×</span>
+    <span class="f"><span>3 atoms</span><span>1 <s>molec</s></span></span>
+    <span>=</span> <b>3.61×10<sup>24</sup> atoms</b>
+  </div>
+</div>
+</body>
+</html>
