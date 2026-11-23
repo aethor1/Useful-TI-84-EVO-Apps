@@ -150,24 +150,14 @@ class UIFlow(unittest.TestCase):
         if a.pick is not None:
             self.press(ui.K_ENTER)
 
-    def solve_formula(self, formula, given, gu, gw_idx, fu, fw_idx, M=None, el=None):
+    def solve_formula(self, formula, given, gu, gw_idx, fu, fw_idx):
+        """gu/fu are unit digits as listed for the compound: 1 g 2 mol 3 molec 4 f.u. 5 atoms"""
         a = self.app
         self.press(DIG["1"])                       # menu -> formula entry
         self.type_formula(formula)
         self.assertEqual(a.ftext, formula)
-        self.press(ui.K_ENTER)                     # -> masses
-        self.assertEqual(a.scr, "mass", a.msg)
-        if M:
-            self.press(*num_keys(M))
-            self.press(ui.K_ENTER)
-        for sym, v in (el or {}).items():
-            idx = a.cmp.order.index(sym) + 1
-            while a.msel != idx:
-                self.press(ui.K_DOWN)
-            self.press(*num_keys(v))
-            self.press(ui.K_ENTER)
         self.press(ui.K_ENTER)                     # -> problem
-        self.assertEqual(a.scr, "prob")
+        self.assertEqual(a.scr, "prob", a.msg)
         self.press(*num_keys(given))
         self.press(ui.K_DOWN, DIG[str(gu)])
         self.press(ui.K_DOWN, DIG[str(gw_idx)])
@@ -178,20 +168,38 @@ class UIFlow(unittest.TestCase):
         return num_text(a.res["answer"])
 
     def test_problem_16_through_ui(self):
-        # g H in 4.50 g NH3 (M 17, H 1.008): units 1=g 2=mol 3=particles
-        self.assertEqual(self.solve_formula("NH3", "4.50", 1, 0, 1, 2, "17", {"H": "1.008"}), "0.800")
+        # g H in 4.50 g NH3 (precise masses: NH3 17.031, H 1.008; table masses give 0.800)
+        self.assertEqual(self.solve_formula("NH3", "4.50", 1, 0, 1, 2), "0.799")
 
     def test_problem_14_through_ui(self):
-        self.assertEqual(self.solve_formula("Na2SO4", "14.2", 1, 0, 3, 1, "142"), "1.20x10^23")
+        self.assertEqual(self.solve_formula("Na2SO4", "14.2", 1, 0, 3, 1), "1.20x10^23")
+
+    def test_unit_row_lists_every_particle(self):
+        a = self.app
+        self.press(DIG["1"])
+        self.type_formula("H2O")
+        self.press(ui.K_ENTER, ui.K_DOWN, DIG["4"])         # given unit: f.u.
+        self.assertEqual((a.gu, a.cmp.ptype), (ui.PT, "formula units"))
+        self.press(ui.K_RIGHT)                               # -> atoms
+        self.assertEqual(a.cmp.ptype, "atoms")
+        self.press(ui.K_RIGHT)                               # wraps to g
+        self.assertEqual(a.gu, ui.G)
+        self.press(ui.K_DOWN, DIG["1"], ui.K_UP)             # of: H -> only g mol atoms
+        self.assertEqual(len(a.unit_opts(a.gw)), 3)
+        self.press(ui.K_LEFT)                                # g -> atoms
+        self.assertEqual(a.gu, ui.PT)
+        self.assertEqual(a.unit_word(a.gu, a.gw), "atoms")
 
     def test_problem_4_through_ui(self):
         self.assertEqual(self.solve_formula("C6H12O6", "7.5E24", 3, 2, 2, 0), "1.0")
 
-    def test_both_answers(self):
+    def test_precise_only(self):
         self.solve_formula("SO2", "9.03E23", 3, 0, 2, 0)
-        self.assertEqual(self.app.res["steps"][0][4], ("6.02", 23))
-        self.assertEqual(self.app.resp["steps"][0][4], ("6.02214076", 23))
-        self.assertEqual(num_text(self.app.resp["answer"]), "1.50")
+        self.assertEqual(self.app.res["steps"][0][4], ("6.02214076", 23))
+        self.assertEqual(num_text(self.app.res["answer"]), "1.50")
+        shown = " ".join(o[3] for o in ui._shown[0] if o[0] == ui.TXT)
+        self.assertIn("M=64.058", shown)                    # full atomic weights
+        self.assertNotIn("6.02x10", shown.replace("6.02214076", ""))
 
     def test_nh4no3_needs_no_picker_enter(self):
         self.press(DIG["1"])
@@ -261,6 +269,22 @@ class UIFlow(unittest.TestCase):
         self.press(ui.K_LEFT)
         self.assertLess(self.app.hscroll, self.app.max_scroll())
 
+    def test_scroll_diff_is_cheap(self):
+        # the old diff did ~10k rect checks per scroll click (~1 s on the Evo)
+        self.solve_formula("Na2SO4", "14.2", 1, 0, 5, 3)
+        calls = [0]
+        painted = []
+        real, real_paint = ui._hit, ui.paint
+        ui._hit = lambda a, b: (calls.__setitem__(0, calls[0] + 1), real(a, b))[1]
+        ui.paint = lambda r, ops: (painted.append(r), real_paint(r, ops))
+        try:
+            self.app.key(ui.K_RIGHT)
+        finally:
+            ui._hit, ui.paint = real, real_paint
+        self.check_fits()
+        self.assertLess(calls[0], 1500)
+        self.assertTrue(all(r[3] < 79 for r in painted), painted)  # answer rows untouched
+
     def test_menu_has_no_constants_toggle(self):
         self.assertNotIn("Constants", " ".join(ui.MENU))
 
@@ -274,8 +298,10 @@ class UIFlow(unittest.TestCase):
         self.assertFalse(self.app.running)
 
     def test_all_screens_draw(self):
-        for k in (DIG["3"], ui.K_CLEAR, DIG["2"], ui.K_F1, ui.K_F4):
+        for k in (DIG["2"], ui.K_F1, ui.K_F4):
             self.press(k)
+        self.press(DIG["3"])                         # menu 3 = quit
+        self.assertFalse(self.app.running)
 
     def test_moving_cursor_repaints_little(self):
         painted = []
@@ -297,8 +323,8 @@ class Bundle(unittest.TestCase):
         sys.path.insert(0, root)
         import build
         path = build.build()
-        seq = iter([DIG["1"], KEY_OF["N"], KEY_OF["H"], ui.K_VARX, DIG["3"], ui.K_ENTER,
-                    ui.K_ENTER] + num_keys("4.50") +
+        seq = iter([DIG["1"], KEY_OF["N"], KEY_OF["H"], ui.K_VARX, DIG["3"], ui.K_ENTER]
+                   + num_keys("4.50") +
                    [ui.K_DOWN, DIG["1"], ui.K_DOWN, DIG["0"], ui.K_DOWN, DIG["1"],
                     ui.K_DOWN, DIG["2"], ui.K_ENTER, ui.K_RIGHT, ui.K_2ND, ui.K_MODE])
         tis = types.ModuleType("ti_system")

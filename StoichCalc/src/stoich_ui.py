@@ -2,9 +2,9 @@
 # Event driven: App.key(code) updates state and redraws. On the calculator,
 # main() feeds it ti_system.wait_key(); the web demo feeds it clicks.
 from ti_draw import set_color, fill_rect, draw_line, draw_text
-from chemcore import (TEACHER, PRECISE, G, MOL, PT, ChemError,
+from chemcore import (PRECISE, G, MOL, PT, ChemError,
                       parse_formula, parse_symbols, compound_from_formula,
-                      compound_from_counts, elem_mass, molar_mass, check_mass_str,
+                      compound_from_counts, molar_mass,
                       solve, candidates, PTYPES, PSHORT)
 
 # ---------------------------------------------------------------- tunables
@@ -55,8 +55,6 @@ RED = (205, 30, 30)
 GREEN = (0, 120, 60)
 ANSBG = (220, 245, 228)
 YELLOW = (255, 220, 60)
-ORANGE = (220, 110, 10)
-TEAL = (0, 130, 140)
 
 
 # ---------------------------------------------------------------- drawing helpers
@@ -114,32 +112,46 @@ def _join(a, b):
     return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
 
 
+def _merge(rs):
+    """Union rects that touch until none do."""
+    out = []
+    for r in rs:
+        i = 0
+        while i < len(out):
+            if _hit(r, out[i]):
+                r = _join(r, out.pop(i))
+                i = 0
+            else:
+                i += 1
+        out.append(r)
+    return out
+
+
 def dirty(old, new):
-    """Rects to repaint: wherever an op appeared or vanished, grown until no
-    character straddles an edge and merged where they touch."""
+    """Rects to repaint: wherever an op appeared or vanished, merged where they
+    touch and grown until no character straddles an edge. Merging first keeps
+    this ~linear: scrolling changes ~100 ops, and growing each one separately
+    cost ~25k rect checks (about 1 s per key on the Evo)."""
     if old is None:
         return [(0, 0, W - 1, H - 1)]
     so, sn = set(old), set(new)
-    todo = [bbox(o) for o in old if o not in sn] + [bbox(o) for o in new if o not in so]
-    texts = [o for o in new if o[0] == TXT]
-    out = []
-    while todo:
-        r = todo.pop()
-        for q in out:
-            if _hit(r, q):
-                out.remove(q)
-                todo.append(_join(r, q))
-                break
-        else:
-            for t in texts:
-                if _hit(r, bbox(t)):
-                    c = _join(r, cells(t, r)[0])
-                    if c != r:
-                        todo.append(c)
-                        break
-            else:
-                out.append(r)
-    return out
+    scr = (0, 0, W - 1, H - 1)
+    rs = [bbox(o) for o in old if o not in sn] + [bbox(o) for o in new if o not in so]
+    rs = [r for r in rs if _hit(r, scr)]       # scrolled-off parts need no paint
+    texts = [(bbox(o), o) for o in new if o[0] == TXT]
+    grew = True
+    while grew:
+        rs = _merge(rs)
+        grew = False
+        for k in range(len(rs)):
+            r = rs[k]
+            for b, t in texts:
+                if _hit(r, b):
+                    r = _join(r, cells(t, r)[0])
+            if r != rs[k]:
+                rs[k] = r
+                grew = True
+    return rs
 
 
 def _fill(b, c):
@@ -295,7 +307,7 @@ def drop_last_symbol(s):
 
 
 # ---------------------------------------------------------------- the app
-MENU = ("Formula entry", "Lazy entry (element list)", "Keys / help", "Quit")
+MENU = ("Formula entry", "Lazy entry (element list)", "Quit")
 UNIT_NAMES = {G: "g", MOL: "mol"}
 PICK_ROWS = 7
 
@@ -316,13 +328,10 @@ class App:
         self.lcounts = {}
         self.lsel = 0
         self.ltyping = False
-        self.msel = 0
-        self.medit = None
         self.psel = 0
         self.gval = ""
         self.gu, self.gw, self.fu, self.fw = G, None, MOL, None
-        self.res = None            # Teacher result (drawn as the chain)
-        self.resp = None           # Precise result (answer only)
+        self.res = None            # solved problem (Precise constants)
         self.hscroll = 0
         self.second = False        # [2nd] was the last key
         self._chain = None
@@ -352,7 +361,6 @@ class App:
             self.draw()
 
     def draw(self):
-        self._chain = None
         getattr(self, "d_" + self.scr)()
         if self.pick is not None:
             self.d_pick()
@@ -452,31 +460,11 @@ class App:
         elif k == K_ENTER or (d is not None and 1 <= d <= len(MENU)):
             if d is not None:
                 self.sel = d - 1
-            self.go(("formula", "lazy1", "help", "quit")[self.sel])
+            self.go(("formula", "lazy1", "quit")[self.sel])
             if self.scr == "quit":
                 self.running = False
         elif k == K_F5:
             self.running = False
-
-    # ----- help
-    def d_help(self):
-        header("Keys")
-        lines = ("Letter fields: keys type their",
-                 "  green letter (no [alpha]).",
-                 "Pick list: up/down, [enter],",
-                 "  or keep typing = top choice",
-                 "[x,t,0,n] formula: ABC <-> 123",
-                 "[x,t,0,n] lazy: next element",
-                 "123 mode: [.] = hydrate dot",
-                 "Values: [,] = x10^ (-) = neg",
-                 "[clear] back   [del] erase",
-                 "[2nd][quit]  exit")
-        for i in range(len(lines)):
-            txt(4, 26 + i * CH, lines[i], FG)
-        softbar(("", "", "", "", "BACK"))
-
-    def k_help(self, k):
-        self.go("menu")
 
     # ----- formula entry
     def d_formula(self):
@@ -493,7 +481,7 @@ class App:
                 for s in order:
                     line += s + ":" + str(cnt[s]) + "  "
                 txt(6, 80, line[:31], FG)
-                txt(6, 98, "M = " + molar_mass(c, TEACHER)[1] + " g/mol", GREEN)
+                txt(6, 98, "M = " + molar_mass(c, PRECISE)[1] + " g/mol", GREEN)
                 txt(6, 116, c.ptype, GRAY)
             except ChemError as e:
                 s = str(e)
@@ -546,12 +534,8 @@ class App:
             self.gw = None
             self.fw = None
         else:
-            c.mass_ov = old.mass_ov
-            c.el_ov = old.el_ov
             c.ptype = old.ptype
-        self.msel = 0
-        self.medit = None
-        self.go("mass")
+        self.go("prob")
 
     # ----- lazy entry, step 1: element list (letters only, auto A-lock)
     def d_lazy1(self):
@@ -667,83 +651,6 @@ class App:
         elif k == K_F4:
             self.go("menu")
 
-    # ----- masses / amu override
-    def d_mass(self):
-        c = self.cmp
-        header(form_segs(c.formula) + [("  masses", 0, WHITE)])
-        rows = [("M " + c.formula, molar_mass(c, TEACHER))]
-        for s in c.order:
-            rows.append((s + " x" + str(c.counts[s]), elem_mass(c, s, TEACHER)))
-        top = 0
-        if self.msel > 5:
-            top = self.msel - 5
-        for i in range(top, min(len(rows), top + 6)):
-            y = 26 + (i - top) * 22
-            lab, (v, s, ov) = rows[i]
-            if i == self.msel:
-                box(2, y - 3, W - 4, 21, SEL)
-            if i == 0:
-                draw_segs(8, y, [("M ", 0, FG)] + form_segs(c.formula))
-            else:
-                txt(8, y, lab, FG)
-            if i == self.msel and self.medit is not None:
-                box(150, y - 2, 96, 19, (255, 250, 220))
-                txt(154, y, self.medit + "_", HDR)
-            else:
-                txt(154, y, s + (" *" if ov else ""), ORANGE if ov else FG)
-            txt(250, y, "g/mol" if i == 0 else "", GRAY)
-        hint(self, 158, "0-9: type amu  [del]: reset")
-        message(self.msg)
-        softbar(("BACK", "RESET", "", "MENU", "NEXT"))
-
-    def k_mass(self, k):
-        c = self.cmp
-        n = len(c.order) + 1
-        if self.medit is not None:
-            if k == K_ENTER:
-                try:
-                    v = check_mass_str(self.medit)
-                except ChemError as e:
-                    self.msg = str(e)
-                    return
-                if self.msel == 0:
-                    c.mass_ov = v
-                else:
-                    c.el_ov[c.order[self.msel - 1]] = v
-                self.medit = None
-            elif k == K_CLEAR:
-                self.medit = None
-            elif k == K_DEL:
-                self.medit = self.medit[:-1]
-            else:
-                ch = num_char(k)
-                if ch is not None and ch in "0123456789." and len(self.medit) < 10:
-                    self.medit += ch
-            return
-        ch = num_char(k)
-        if ch is not None and ch in "0123456789.":
-            self.medit = ch
-        elif k == K_UP:
-            self.msel = (self.msel - 1) % n
-        elif k == K_DOWN:
-            self.msel = (self.msel + 1) % n
-        elif k == K_DEL:
-            if self.msel == 0:
-                c.mass_ov = None
-            else:
-                s = c.order[self.msel - 1]
-                if s in c.el_ov:
-                    del c.el_ov[s]
-        elif k == K_F2:
-            c.mass_ov = None
-            c.el_ov = {}
-        elif k == K_ENTER or k == K_F5:
-            self.go("prob")
-        elif k == K_F1 or k == K_CLEAR:
-            self.go(self.src)
-        elif k == K_F4:
-            self.go("menu")
-
     # ----- Given / Find
     def who_list(self):
         return [None] + self.cmp.order
@@ -752,6 +659,17 @@ class App:
         if u == PT:
             return "atoms" if who is not None else self.cmp.ptype
         return UNIT_NAMES[u]
+
+    def unit_opts(self, who):
+        """Unit chips: (unit, label, particle type it sets). An element's
+        particles are always atoms; a compound lists every particle type."""
+        ps = PTYPES if who is None else ("atoms",)
+        return [(G, "g", None), (MOL, "mol", None)] + [(PT, PSHORT[p], p) for p in ps]
+
+    def unit_idx(self, u, who):
+        if u != PT:
+            return 0 if u == G else 1
+        return 2 if who is not None else 2 + PTYPES.index(self.cmp.ptype)
 
     def d_prob(self):
         c = self.cmp
@@ -770,18 +688,17 @@ class App:
                 if self.psel == 0:
                     box(x + 1, y - 1, 2, 18, HDR)
             elif i in (1, 3):
-                cur = self.gu if i == 1 else self.fu
                 who = self.gw if i == 1 else self.fw
-                for u in (G, MOL, PT):
-                    w = self.unit_word(u, who)
-                    if u == PT and w != "formula units":   # spelled out on this page
-                        w = PSHORT[w]
-                    if u == cur:
-                        box(x - 3, y - 2, tw(w) + 6, 20, HDR)
+                cur = self.unit_idx(self.gu if i == 1 else self.fu, who)
+                opts = self.unit_opts(who)
+                for j in range(len(opts)):
+                    w = opts[j][1]
+                    if j == cur:
+                        box(x - 2, y - 2, tw(w) + 4, 20, HDR)
                         txt(x, y, w, WHITE)
                     else:
                         txt(x, y, w, FG)
-                    x += tw(w) + 14
+                    x += tw(w) + 8
             else:
                 cur = self.gw if i == 2 else self.fw
                 for who in self.who_list():
@@ -796,7 +713,7 @@ class App:
                     x += w + 12
         hint(self, 170, "</>: pick   0-9: shortcut")
         message(self.msg)
-        softbar(("BACK", "PTCL", "", "MENU", "SOLVE"))
+        softbar(("BACK", "", "", "MENU", "SOLVE"))
 
     def k_prob(self, k):
         d = digit(k)
@@ -808,10 +725,7 @@ class App:
         elif k == K_ENTER or k == K_F5:
             self.resolve()
         elif k == K_F1:
-            self.go("mass")
-        elif k == K_F2:
-            i = PTYPES.index(self.cmp.ptype)
-            self.cmp.ptype = PTYPES[(i + 1) % 3]
+            self.go(self.src)
         elif k == K_F4:
             self.go("menu")
         elif r == 0:
@@ -819,7 +733,7 @@ class App:
                 if self.gval:
                     self.gval = ""
                 else:
-                    self.go("mass")
+                    self.go(self.src)
                 return
             if k == K_DEL:
                 self.gval = self.gval[:-1]
@@ -837,21 +751,24 @@ class App:
                 return
             self.gval += ch
         elif r in (1, 3):
-            us = (G, MOL, PT)
-            cur = self.gu if r == 1 else self.fu
-            i = us.index(cur)
+            who = self.gw if r == 1 else self.fw
+            us = self.unit_opts(who)
+            i = self.unit_idx(self.gu if r == 1 else self.fu, who)
             if k == K_LEFT:
-                i = (i - 1) % 3
+                i = (i - 1) % len(us)
             elif k == K_RIGHT:
-                i = (i + 1) % 3
-            elif d is not None and 1 <= d <= 3:
+                i = (i + 1) % len(us)
+            elif d is not None and 1 <= d <= len(us):
                 i = d - 1
             elif k == K_CLEAR:
-                self.go("mass")
+                self.go(self.src)
+            u, w, p = us[i]
+            if p:
+                self.cmp.ptype = p
             if r == 1:
-                self.gu = us[i]
+                self.gu = u
             else:
-                self.fu = us[i]
+                self.fu = u
         else:
             ws = self.who_list()
             cur = self.gw if r == 2 else self.fw
@@ -863,7 +780,7 @@ class App:
             elif d is not None and d < len(ws):
                 i = d
             elif k == K_CLEAR:
-                self.go("mass")
+                self.go(self.src)
             if r == 2:
                 self.gw = ws[i]
             else:
@@ -871,16 +788,15 @@ class App:
 
     def resolve(self):
         try:
-            args = (self.gval, self.gu, self.gw, self.fu, self.fw)
-            self.res = solve(self.cmp, TEACHER, *args)
-            self.resp = solve(self.cmp, PRECISE, *args)
+            self.res = solve(self.cmp, PRECISE, self.gval, self.gu, self.gw, self.fu, self.fw)
         except ChemError as e:
             self.msg = str(e)
             return
         self.hscroll = 0
+        self._chain = None         # layout is cached per result: scrolling reuses it
         self.go("ans")
 
-    # ----- answer: one-line chain (scrolls left/right), both answers pinned below
+    # ----- answer: one-line chain (scrolls left/right), the answer pinned below
     def unit_segs(self, u, who, short, c):
         word = self.unit_word(u, who)
         if short and u == PT:
@@ -940,8 +856,7 @@ class App:
 
     def d_ans(self):
         c = self.cmp
-        mv, ms, ov = molar_mass(c, TEACHER)
-        header(form_segs(c.formula) + [("  M=" + ms + ("*" if ov else ""), 0, WHITE)])
+        header(form_segs(c.formula) + [("  M=" + molar_mass(c, PRECISE)[1], 0, WHITE)])
         self.max_scroll()
         items, total = self._chain
         y = 28
@@ -957,35 +872,32 @@ class App:
             box(W - 12, y - 4, 12, 2 * CH + 14, YELLOW)
             txt(W - 11, y + CH // 2, ">", FG)
         ln(0, 72, W - 1, 72, LIGHT)
-        rows = ((self.res, "TEACHER", ORANGE, 78), (self.resp, "PRECISE", TEAL, 118))
-        for (r, name, cc, yy) in rows:
-            box(0, yy - 3, W, 22, ANSBG)
-            box(4, yy - 1, 20, 18, cc)
-            txt(9, yy, name[0], WHITE)
-            for short in (False, True):        # "formula units" -> "f.u." if it won't fit
-                segs = [(" = ", 0, FG)] + num_segs(r["answer"], GREEN) + [(" ", 0, FG)] + \
-                    self.unit_segs(r["unit"][0], r["unit"][1], short, GREEN)
-                if 24 + segs_w(segs) <= W:
-                    break
-            draw_segs(24, yy, segs)
-            draw_segs(28, yy + 20, [("raw ", 0, GRAY)] + num_segs(r["full"], GRAY))
-        if self.res["ambiguous"]:
+        # y >= 82 so exponents (y-6) clear the chain's subscripts (to y 72): if they
+        # touched, every scroll would repaint the answer rows too
+        r = self.res
+        box(0, 79, W, 22, ANSBG)
+        for short in (False, True):            # "formula units" -> "f.u." if it won't fit
+            segs = [("= ", 0, FG)] + num_segs(r["answer"], GREEN) + [(" ", 0, FG)] + \
+                self.unit_segs(r["unit"][0], r["unit"][1], short, GREEN)
+            if 6 + segs_w(segs) <= W:
+                break
+        draw_segs(6, 82, segs)
+        draw_segs(10, 102, [("raw ", 0, GRAY)] + num_segs(r["full"], GRAY))
+        if r["ambiguous"]:
             note = "zeros ambiguous -> 6 s.f."
-        elif self.res["capped"]:
+        elif r["capped"]:
             note = "capped at 6 s.f."
         else:
-            note = str(self.res["sf"]) + " s.f. (from given)"
-        txt(6, 158, note, GRAY)
+            note = str(r["sf"]) + " s.f. (from given)"
+        txt(6, 124, note, GRAY)
         if self.max_scroll() > 0:
-            txt(6, 174, "</>: scroll the work", GRAY)
-        softbar(("EDIT", "MASS", "NEW", "", "MENU"))
+            txt(6, 142, "</>: scroll the work", GRAY)
+        softbar(("EDIT", "", "NEW", "", "MENU"))
 
     def k_ans(self, k):
         d = digit(k)
         if k == K_F1 or d == 1 or k == K_CLEAR:
             self.go("prob")
-        elif k == K_F2 or d == 2:
-            self.go("mass")
         elif k == K_F3 or d == 3:
             self.ftext = ""
             self.fnum = False

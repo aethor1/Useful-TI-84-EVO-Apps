@@ -324,15 +324,6 @@ def molar_mass(cmp, mode):
     return tot, s, False
 
 
-def check_mass_str(s):
-    v, n, a, t = parse_num(s)
-    if v <= 0:
-        raise ChemError("Mass must be > 0")
-    if t[1] is not None:
-        raise ChemError("Type a plain number")
-    return s.strip()
-
-
 # ---------------------------------------------------------------- solving
 def unit_label(cmp, u, who, short):
     """Unit text like 'g NH3', 'mol H', 'atoms Na', 'molec CO2'."""
