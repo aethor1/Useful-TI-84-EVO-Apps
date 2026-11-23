@@ -38,10 +38,5 @@ TI doesn't publish the Evo's `wait_key()` codes or its `ti_draw` font size. STOI
 
 **Sig figs** come from the given value. Counts, Avogadro and molar masses are treated as exact. Ambiguous trailing zeros (`350`) or more than 6 sig figs fall back to 6.
 
-## Web demo
-From the `StoichCalc` folder:
-```
-python -m http.server 8484
-```
 Then open http://localhost:8484/web/ (needs internet once to load Pyodide from the CDN).
 
